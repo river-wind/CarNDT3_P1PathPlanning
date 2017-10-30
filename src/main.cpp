@@ -1,3 +1,8 @@
+/*Chris Lawrence Initial version: October 2017
+* Based off of the Udacity Term 3 Path Planning project starter code and QA Walkthrough
+* relies on splines rather than manual jerk minimization.
+*/
+
 #include <fstream>
 #include <math.h>
 #include <uWS/uWS.h>
@@ -258,28 +263,31 @@ int main() {
 		  car_s = end_path_s;
 		}
 
-		//std::cout<<"car_d ("<<car_d<<")  vs lane ("<<lane<<") = "<<fmod(round(car_d),2.0)<<std::endl;
-  		//Check if too close to car in front
+		//CEL Octover 2017: my code generally begins here.  Some walkthrough code is also below, mixed in.
+  		//Create variables to hold the important items from sensor fusion for later logic
+		//Could be done more cleanly with vectors, including saving data history based on carID sensor_fusion[i][0]
+		//Check if too close to car in front
   		bool too_close = false; 
                 bool left_lane_open = true;
                 bool right_lane_open = true;
                 bool just_changed = false;
 		
-		      double closest_front_L = 100000.0;
-		      double closest_front_R = 100000.0;
-		      double closest_rear_L = 100000.0;
-		      double closest_rear_R = 100000.0;
-		      double closest_front_Lv = 100000.0;
-		      double closest_front_Rv = 100000.0;
-		      double closest_rear_Lv = 100000.0;
-		      double closest_rear_Rv = 100000.0;
-		      double closest_front_Lfs = 100000.0;
-		      double closest_front_Rfs = 100000.0;
-		      double closest_rear_Lfs = 100000.0;
-		      double closest_rear_Rfs = 100000.0;
+	        double closest_front_L = 100000.0;
+		double closest_front_R = 100000.0;
+		double closest_rear_L = 100000.0;
+	        double closest_rear_R = 100000.0;
+	        double closest_front_Lv = 100000.0;
+		double closest_front_Rv = 100000.0;
+		double closest_rear_Lv = 100000.0;
+		double closest_rear_Rv = 100000.0;
+		double closest_front_Lfs = 100000.0;
+		double closest_front_Rfs = 100000.0;
+		double closest_rear_Lfs = 100000.0;
+		double closest_rear_Rfs = 100000.0;
 		double too_close_speed = 1000.0;
 		double too_close_sd = 100000;
-		//loop through sensor fusion data, AKA car list
+
+		//loop through sensor fusion data, AKA other car list
 		for (int i = 0; i < sensor_fusion.size(); i++)
 		{
 		  //car is in my lane
@@ -298,204 +306,175 @@ int main() {
 		    if((check_car_s > car_s) && ((check_car_s - car_s) <30) && (check_car_s_now > car_s_now) && ((check_car_s_now - car_s_now) <30))
 		    {
 
-	              //Do some logic here, lower reference velocity so we don't crash into the car in front of us, could
-		      //also flag to try to change lanes
-		      //ref_vel = check_speed; //mph
+	              //update the "too_close" flag and record data of the car that is too close.
 		      
                       too_close = true;
 		      too_close_speed = check_speed;
                       too_close_sd = check_car_s_now - car_s_now;
 		    }
-//Adding basic logic for lane changes
 
-		      closest_front_L = 100000.0;
-		      closest_front_R = 100000.0;
-		      closest_rear_L = 100000.0;
-		      closest_rear_R = 100000.0;
-		      closest_front_Lv = 100000.0;
-		      closest_front_Rv = 100000.0;
-		      closest_rear_Lv = 100000.0;
-		      closest_rear_Rv = 100000.0;
-		      closest_front_Lfs = 100000.0;
-		      closest_front_Rfs = 100000.0;
-		      closest_rear_Lfs = 100000.0;
-		      closest_rear_Rfs = 100000.0;
+		    //initialize the current nearby car data points; for closest front right and left, and rear righ and left
+		    closest_front_L = 100000.0;  //distance to front left car
+		    closest_front_R = 100000.0;  //distance to front right car
+		    closest_rear_L = 100000.0;   //distance to rear left car
+		    closest_rear_R = 100000.0;   //distance to rear right car
+		    closest_front_Lv = 100000.0; //velocity of front left car
+		    closest_front_Rv = 100000.0; //velocity of front right car
+		    closest_rear_Lv = 100000.0;  //velocity of rear left car
+		    closest_rear_Rv = 100000.0;  //velocity of rear right car
+		    closest_front_Lfs = 100000.0;//future position of front left car
+		    closest_front_Rfs = 100000.0;//future position of front right car
+		    closest_rear_Lfs = 100000.0; //future position of rear left car 
+		    closest_rear_Rfs = 100000.0; //future position of rear right car
 
 
-                      // loop through cars again to find any in adjacent lanes to avoid before trying to change lanes
-                      for (int i2 = 0; i2 < sensor_fusion.size(); i2++)
-                      {
-                        float d2 = sensor_fusion[i2][6];
+                    // loop through cars again to find any in adjacent lanes to avoid before trying to change lanes  
+                    for (int i2 = 0; i2 < sensor_fusion.size(); i2++)
+                    {
+                      float d2 = sensor_fusion[i2][6]; //check the distance off of the yellow line of these cars (Frenet coords)
                                     
-                        // check left lane for this car
-                        if ((d2 < (2+4*(lane-1)+2.0)) && (d2 >(2+4*(lane-1)-2.0)))
-                        {
-                          double vx2 = sensor_fusion[i2][3];
-                          double vy2 = sensor_fusion[i2][4];
-                          double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
-                          double check_car_s2 = sensor_fusion[i2][5];
-			  double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
-			  double distance = 0;
+                      // check if this car is in the left lane
+                      if ((d2 < (2+4*(lane-1)+2.0)) && (d2 >(2+4*(lane-1)-2.0)))
+                      {
+			//car is in left lane, save the values as with the car ahead of us, to determine the closest.
+                        double vx2 = sensor_fusion[i2][3];
+                        double vy2 = sensor_fusion[i2][4];
+                        double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
+                        double check_car_s2 = sensor_fusion[i2][5];
+		        double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
+		        double distance = 0;
 
-			  //Check future positions of car, instead of the current positions:
-			 
-
-
-			  distance = abs(check_car_s2 - car_s_now);
-			  if(car_s_now < check_car_s2)  //if check car is ahead of us
+			distance = abs(check_car_s2 - car_s_now);  //find the distance between us and the car being checked right now
+			if(car_s_now < check_car_s2)  //if check car is ahead of us
+			{
+			  if(distance < closest_front_L)  //if this is the closest car checked so far for front left, update our "closest" record to this car.
 			  {
-			    if(distance < closest_front_L)
-			    {
-			      closest_front_L = distance;
-			      closest_front_Lv = check_speed2;
-			      closest_front_Lfs = check_car_s_future2;
-				//cout<<"closest front left: "<<closest_front_L;
-			    }
+			    closest_front_L = distance;
+			    closest_front_Lv = check_speed2;
+			    closest_front_Lfs = check_car_s_future2;
 			  }
-			  else   //if check car is behind us
+			}
+			else   //if check car is behind us
+			{
+			  if(distance < closest_rear_L)  //if this is the closest car checked so far for rear left, update our "closest" record to this car.
 			  {
-			    if(distance < closest_rear_L)
-			    {
-			      closest_rear_L = distance;
-			      closest_rear_Lv = check_speed2;
-			      closest_rear_Lfs = check_car_s_future2;
-			    }
+			    closest_rear_L = distance;
+			    closest_rear_Lv = check_speed2;
+			    closest_rear_Lfs = check_car_s_future2;
 			  }
-			  //std::cout<<"closest Left Lane distances - rear:"<<closest_rear_L<<" front:"<<closest_front_L << std::endl;
-                          // predict where this car will be at the end of our path (based on front car projection)
-                          //check_car_s_future2 += (double)prev_size*.02*check_speed2;
-  
-                          // check s values greater than mine and s gap 
-                          //if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
-                          //{
-                          //  left_lane_open = false;
-
-                            //std::cout << "We're at s="<<car_s << "car to left at s="<<check_car_s2<<", not clear" <<  std::endl;
-                          //}
-                        }
-                        // check right lane for this car
-                        if ((d2 < (2+4*(lane+1)+2.0)) && (d2 >(2+4*(lane+1)-2.0)))
-                        {
-                          double vx2 = sensor_fusion[i2][3];
-                          double vy2 = sensor_fusion[i2][4];
-                          double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
-                          double check_car_s2 = sensor_fusion[i2][5];
-			  double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
-
-			  double distance = 0;
-
-			  distance = abs(check_car_s2 - car_s_now);
-			  if(car_s_now < check_car_s2)  //if check car is ahead of us
-			  {
-			    if(distance < closest_front_R)
-			    {
-			      closest_front_R = distance;
-			      closest_front_Rv = check_speed2;
-			      closest_front_Rfs = check_car_s_future2;
-			      //cout<<"NEW closest front right: "<<closest_front_R;
-			    }
-			  }
-			  else   //if check car is behind us
-			  {
-			    if(distance < closest_rear_R)
-			    {
-			      closest_rear_R = distance;
-			      closest_rear_Rv = check_speed2;
-			      closest_rear_Rfs = check_car_s_future2;
-			    }
-			  }
-
-			  //std::cout<<"closest Right Lane distances - rear:"<<closest_rear_R<<" front:"<<closest_front_R<<std::endl;
-                          // predict where this car will be in the future
-                          //check_car_s_future2 += (double)prev_size*.02*check_speed2;
-
-                          // check s values greater than mine and s gap 
-                          //if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
-                          //{
-                          //  right_lane_open = false;
-                            //std::cout << "We're at s="<<car_s << "car to right at s="<<check_car_s2<<", not clear" <<  std::endl;
-                          //}
-			  //if((!left_lane_open) && (!right_lane_open)){break;}
-                        }
+			}
                       }
-                    //}
+                      // check f car is in the right lane
+                      if ((d2 < (2+4*(lane+1)+2.0)) && (d2 >(2+4*(lane+1)-2.0)))
+                      {
+			//car is in the right land
+                        double vx2 = sensor_fusion[i2][3];
+                        double vy2 = sensor_fusion[i2][4];
+                        double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
+                        double check_car_s2 = sensor_fusion[i2][5];
+			double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
+			double distance = 0;
+
+			distance = abs(check_car_s2 - car_s_now); //find the distance between us and the car being checked right now
+			if(car_s_now < check_car_s2)  //if check car is ahead of us
+			{
+			  if(distance < closest_front_R)  //if this is the closest car checked so far for the front right, update our "closest" record to this car
+			  {
+			    closest_front_R = distance;
+			    closest_front_Rv = check_speed2;
+			    closest_front_Rfs = check_car_s_future2;
+			  }
+			}
+			else   //if check car is behind us
+			{
+			  if(distance < closest_rear_R)  //if this is the closest car checked so far for the rear right, update our "closest" record to this car
+			  {
+			    closest_rear_R = distance;
+			    closest_rear_Rv = check_speed2;
+			    closest_rear_Rfs = check_car_s_future2;
+			  }
+			}
+                      }
+                    }
                   }
 		}
 
-std::cout<<closest_front_L<<":"<<closest_front_Lv<<"  :"<<too_close_sd<<":"<<too_close_speed<<":  "<<closest_front_R<<":"<<closest_front_Rv<<std::endl;
-std::cout<<closest_rear_L<<":"<<closest_rear_Lv<<"  :     *     :  "<<closest_rear_R<<":"<<closest_rear_Rv<<std::endl<<std::endl;
+		std::cout<<closest_front_L<<":"<<closest_front_Lv<<"  :"<<too_close_sd<<":"<<too_close_speed<<":  "<<closest_front_R<<":"<<closest_front_Rv<<std::endl;
+		std::cout<<closest_rear_L<<":"<<closest_rear_Lv<<"  :     *     :  "<<closest_rear_R<<":"<<closest_rear_Rv<<std::endl<<std::endl;
 
+
+		/////////////////////////////////////////calculate costs///////////////////////////////////////
+		//First, set a low cost for keeping the current lane.  only include the speed of the car in front, as a fraction so lower speeds = higher cost
 		double costKL = 0.0;
-		//if (too_close_speed!=1000.0){costKL += 1/too_close_speed;}
 		costKL += 1/too_close_speed;
+
+		//Next, set the cost of changing to the right lane.  Avoid collisions at all costs, then weight the speed of the front car more than the distance it is ahead
+		//again, costs in fractions other than collision avoidance
 		double costR = 0.0;
 		if (lane==2){costR += 1000;}
-		           //if (closest_rear_R!=100000.0){costR += 1/closest_rear_R;}
-		           //if (closest_front_R!=100000.0){costR += (1/closest_front_R);}
-		costR += ((1/closest_front_R)*.20);
-		costR += ((1/closest_front_Rv)*.80);
-		           //if (closest_front_Rv!=100000.0){costR += (1/closest_front_Rv)*5;}
-		if (closest_front_R < 25){costR += 1000;}
-		if (closest_rear_R < 7){costR += 1000;}
-		if (abs(closest_front_Rfs - (car_s_now+car_speed*0.2)) < 25){costR += 1000;}
-		if (abs(closest_rear_Rfs - (car_s_now+car_speed*0.2)) < 6){costR += 1000;}
+		           //costR += 1/closest_rear_R;   //We were considering the closeness of the rear car, but now only check for collisions.
+		costR += ((1/closest_front_R)*.20);  //lower weight given to the distance the front car is ahead of us.  further away = lower cost
+		costR += ((1/closest_front_Rv)*.80); //higher weight given to the speed the car is going.  faster speed=lower cost
+		if (closest_front_R < 25){costR += 1000;}  //avoid possible collisions
+		if (closest_rear_R < 7){costR += 1000;}  //avoid possible collisions
+		if (abs(closest_front_Rfs - (car_s_now+car_speed*0.2)) < 25){costR += 1000;}  //avoid possible future collisions
+		if (abs(closest_rear_Rfs - (car_s_now+car_speed*0.2)) < 6){costR += 1000;}  //avoid possible future collisions
+
+		//Next, set the cost of changing to the left lane.  Avoid collisions at all costs, then weight the speed of the front car more than the distance it is ahead
+		//again, costs in fractions other than collision avoidance
 		double costL = 0.0;	
 		if (lane==0){costL += 1000;}
-		        //if (closest_rear_L!=100000.0){costL += 1/closest_rear_L;}
-		        //if (closest_front_L!=100000.0){costL += (closest_front_L);}
-		costL += ((1/closest_front_L)*.20);
-		costL += ((1/closest_front_Lv)*.80);
-		        //if (closest_front_Lv!=100000.0){costL += (1/closest_front_Lv)*5;}
-		if (closest_front_L < 25){costL += 1000;}
-		if (closest_rear_L < 7){costL += 1000;}
-		if (abs(closest_front_Lfs - (car_s_now+car_speed*0.2)) < 25){costL += 1000;}
-		if (abs(closest_rear_Lfs - (car_s_now+car_speed*0.2)) < 6){costL += 1000;}
+		        //if (closest_rear_L!=100000.0){costL += 1/closest_rear_L;}   //We were considering the closeness of the rear car, but now only check for collisions
+		costL += ((1/closest_front_L)*.20);  //lower weight given to the distance the front car is ahead of us.  further away = lower cost
+		costL += ((1/closest_front_Lv)*.80); //higher weight given to the speed the car is going.  faster speed = lower cost
+		if (closest_front_L < 25){costL += 1000;}  //avoid possible collisions
+		if (closest_rear_L < 7){costL += 1000;} //avoid possible collisions
+		if (abs(closest_front_Lfs - (car_s_now+car_speed*0.2)) < 25){costL += 1000;}  //avoid possible collisions
+		if (abs(closest_rear_Lfs - (car_s_now+car_speed*0.2)) < 6){costL += 1000;}  //avoid possible collisions
 
 
 		if(too_close){
-	    	  //slow down
+	    	  //First, slow down
+
+		  //the next few lines work well on breaking more smoothly, but seem to showcase a problem with the waypoints distance adjustments, where the car stalls
+		  //until the "too close" car is again out of range.  Removed the following lines until the waypoint stalling bug can be identified and resolved.
 		  //if(too_close_sd < 5){ref_vel -= .224;}  //emergency braking
 		  //if(too_close_sd < 10){ref_vel -= .112;}
 		  //if(too_close_sd <20){ref_vel -= .056;}
 		  //if(too_close_sd < 30){ref_vel -= .056;}  
 		  ref_vel -= 0.224;
 
-		  //handle braking too hard & drift
+		  //handle braking too hard & drift 
+		  //if the "too close" car is already pulling away, don't keep slowing down.
 		  if((too_close_speed - car_speed>5)){ref_vel+=0.224;}
 
-		  //change lanes if it is cheaper then following
 
-	          if((costR>0.0001 && costR!=1000) || (costL>0.0001 && costL!=1000))
+		  //////////////////////////////////Change lanes if it is cheaper then following "too close" car///////////////////////////////////////
+
+	          if((costR>0.0001 && costR!=1000) || (costL>0.0001 && costL!=1000))  //peek at costs in case of pending lane change
 	          {
   	            std::cout<<"costKL: "<<costKL<<" costR: "<<costR<<" costL:"<<costL<<std::endl;	
-	            //if(closest_front_R<30 || closest_front_L<30) std::cout<<"closest front right: "<<closest_front_R<<" closest front left: "<<closest_front_L<<std::endl;
-		    //if(closest_rear_R<30 || closest_rear_L<30) std::cout<<"closest rear right: "<<closest_rear_R<<" closest rear left: "<<closest_rear_L<<std::endl;
-	            //std::cout<<"closest rear right dist: "<<closest_rear_R<<" closest rear left dist: "<<closest_rear_L<<std::endl;
-	            //std::cout<<"closest rear right future dist: "<<abs(closest_rear_Rfs - (car_s_now+(car_speed*0.2)))<<" closest rear left future: "<<abs(closest_rear_Lfs-(car_s+(car_speed*0.2)))<<std::endl;
 		  }
-                  //if (lane>0 && left_lane_open && abs(car_d-(4*lane)-2)<1)
                   if(costL < costKL && costL < costR)
 		  {
 	            std::cout<<"lane "<<lane<<", changing lanes left"<<" delta d:"<<abs(car_d - (4*lane) - 2)<<std::endl;
-                    lane--;
+                    lane--;  //relying on splines to produce smooth lane shift
                   }
-                  //else if (lane<2 && right_lane_open && abs(car_d-(4*lane)-2)<1)
 		  else if (costR < costKL && costR < costL)
                   {
 	            std::cout<<"lane "<<lane<<", changing lanes right"<<" delta d:"<<abs(car_d-(4*lane)-2)<<std::endl;
-                    lane++;
+                    lane++;  //relying on splines to produce smooth lane shift
                   }
                 }
-   	        else if (ref_vel < 49.5)
+   	        else if (ref_vel < 49.5)  //if we're not too close to a car ahead of us, and going slower than the speed limit, speed up!
 	        {
  	          ref_vel += .224;
 	        }
-		//more ideal would be to find the speed of the lane to be changed to, then slow to that speed, and then change when safe.                    
+		//More ideal would be to find the speed of the lane to be changed to, then slow to that speed, and then change when safe.  
+		//Or find the next best break in traffic in that lane, behind us if that lane is going faster than we are.                  
                 
-		  
-//ending basic logic
-                 
 
+		////////////////////////////////////walkthrough code for waypoint designation with splines////////////////////////////
 		vector<double> ptsx;
 		vector<double> ptsy;
 
