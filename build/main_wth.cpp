@@ -160,11 +160,6 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
-
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-
 int main() {
   uWS::Hub h;
 
@@ -211,6 +206,10 @@ int main() {
   h.onMessage([&ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
 
+    //bool too_close= false ;
+    //double ref_vel = 0;
+    //int lane=1;
+
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -250,7 +249,6 @@ int main() {
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
-		double car_s_now = car_s;
 		int prev_size = previous_path_x.size();
 
 		if(prev_size > 0)
@@ -264,21 +262,7 @@ int main() {
                 bool left_lane_open = true;
                 bool right_lane_open = true;
                 bool just_changed = false;
-		
-		      double closest_front_L = 100000.0;
-		      double closest_front_R = 100000.0;
-		      double closest_rear_L = 100000.0;
-		      double closest_rear_R = 100000.0;
-		      double closest_front_Lv = 100000.0;
-		      double closest_front_Rv = 100000.0;
-		      double closest_rear_Lv = 100000.0;
-		      double closest_rear_Rv = 100000.0;
-		      double closest_front_Lfs = 100000.0;
-		      double closest_front_Rfs = 100000.0;
-		      double closest_rear_Lfs = 100000.0;
-		      double closest_rear_Rfs = 100000.0;
-		double too_close_speed = 1000.0;
-		double too_close_sd = 100000;
+
 		//loop through sensor fusion data, AKA car list
 		for (int i = 0; i < sensor_fusion.size(); i++)
 		{
@@ -290,12 +274,10 @@ int main() {
 		    double vy = sensor_fusion[i][4];
 		    double check_speed = sqrt(vx * vx + vy * vy);
 		    double check_car_s = sensor_fusion[i][5];
-		    double check_car_s_now = check_car_s;
 
 		    check_car_s +=((double)prev_size*.02*check_speed);  //if using previous points can project s value out
-
-		    //check s values greater than mine and s gap, for both future state and current state
-		    if((check_car_s > car_s) && ((check_car_s - car_s) <30) && (check_car_s_now > car_s_now) && ((check_car_s_now - car_s_now) <30))
+		    //check s values greater than mine and s gap
+		    if((check_car_s > car_s) && ((check_car_s - car_s) <30) && (fmod(round(car_d),2.0)==0))
 		    {
 
 	              //Do some logic here, lower reference velocity so we don't crash into the car in front of us, could
@@ -303,196 +285,88 @@ int main() {
 		      //ref_vel = check_speed; //mph
 		      
                       too_close = true;
-		      too_close_speed = check_speed;
-                      too_close_sd = check_car_s_now - car_s_now;
-		    }
+                    
 //Adding basic logic for lane changes
-
-		      closest_front_L = 100000.0;
-		      closest_front_R = 100000.0;
-		      closest_rear_L = 100000.0;
-		      closest_rear_R = 100000.0;
-		      closest_front_Lv = 100000.0;
-		      closest_front_Rv = 100000.0;
-		      closest_rear_Lv = 100000.0;
-		      closest_rear_Rv = 100000.0;
-		      closest_front_Lfs = 100000.0;
-		      closest_front_Rfs = 100000.0;
-		      closest_rear_Lfs = 100000.0;
-		      closest_rear_Rfs = 100000.0;
-
 
                       // loop through cars again to find any in adjacent lanes to avoid before trying to change lanes
                       for (int i2 = 0; i2 < sensor_fusion.size(); i2++)
                       {
                         float d2 = sensor_fusion[i2][6];
                                     
-                        // check left lane for this car
-                        if ((d2 < (2+4*(lane-1)+2.0)) && (d2 >(2+4*(lane-1)-2.0)))
+                        // check left lane for this car if it still looks clear
+                        if ((left_lane_open) && (d2 < (2+4*(lane-1)+2)) && (d2 >(2+4*(lane-1)-2)))
                         {
                           double vx2 = sensor_fusion[i2][3];
                           double vy2 = sensor_fusion[i2][4];
                           double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
                           double check_car_s2 = sensor_fusion[i2][5];
-			  double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
-			  double distance = 0;
-
-			  //Check future positions of car, instead of the current positions:
-			 
-
-
-			  distance = abs(check_car_s2 - car_s_now);
-			  if(car_s_now < check_car_s2)  //if check car is ahead of us
-			  {
-			    if(distance < closest_front_L)
-			    {
-			      closest_front_L = distance;
-			      closest_front_Lv = check_speed2;
-			      closest_front_Lfs = check_car_s_future2;
-				//cout<<"closest front left: "<<closest_front_L;
-			    }
-			  }
-			  else   //if check car is behind us
-			  {
-			    if(distance < closest_rear_L)
-			    {
-			      closest_rear_L = distance;
-			      closest_rear_Lv = check_speed2;
-			      closest_rear_Lfs = check_car_s_future2;
-			    }
-			  }
-			  //std::cout<<"closest Left Lane distances - rear:"<<closest_rear_L<<" front:"<<closest_front_L << std::endl;
-                          // predict where this car will be at the end of our path (based on front car projection)
-                          //check_car_s_future2 += (double)prev_size*.02*check_speed2;
-  
-                          // check s values greater than mine and s gap 
-                          //if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
-                          //{
-                          //  left_lane_open = false;
-
-                            //std::cout << "We're at s="<<car_s << "car to left at s="<<check_car_s2<<", not clear" <<  std::endl;
-                          //}
-                        }
-                        // check right lane for this car
-                        if ((d2 < (2+4*(lane+1)+2.0)) && (d2 >(2+4*(lane+1)-2.0)))
-                        {
-                          double vx2 = sensor_fusion[i2][3];
-                          double vy2 = sensor_fusion[i2][4];
-                          double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
-                          double check_car_s2 = sensor_fusion[i2][5];
-			  double check_car_s_future2 = check_car_s2 + ((double)prev_size*check_speed2*0.02);
-
-			  double distance = 0;
-
-			  distance = abs(check_car_s2 - car_s_now);
-			  if(car_s_now < check_car_s2)  //if check car is ahead of us
-			  {
-			    if(distance < closest_front_R)
-			    {
-			      closest_front_R = distance;
-			      closest_front_Rv = check_speed2;
-			      closest_front_Rfs = check_car_s_future2;
-			      //cout<<"NEW closest front right: "<<closest_front_R;
-			    }
-			  }
-			  else   //if check car is behind us
-			  {
-			    if(distance < closest_rear_R)
-			    {
-			      closest_rear_R = distance;
-			      closest_rear_Rv = check_speed2;
-			      closest_rear_Rfs = check_car_s_future2;
-			    }
-			  }
-
-			  //std::cout<<"closest Right Lane distances - rear:"<<closest_rear_R<<" front:"<<closest_front_R<<std::endl;
+			  double check_car_s_future2 = check_car_s2;
                           // predict where this car will be in the future
                           //check_car_s_future2 += (double)prev_size*.02*check_speed2;
+			  //check for collisions along the way
+			  for(int ci = 0; ci <= 50; ci++)
+			  {
+			    check_car_s_future2 = (check_car_s2 + check_speed2*ci);  //approx, not sure how to find accel  + check_accel2*ci*ci)/2
 
-                          // check s values greater than mine and s gap 
-                          //if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
-                          //{
-                          //  right_lane_open = false;
-                            //std::cout << "We're at s="<<car_s << "car to right at s="<<check_car_s2<<", not clear" <<  std::endl;
-                          //}
-			  //if((!left_lane_open) && (!right_lane_open)){break;}
+                            // check s values greater than mine and s gap 
+                            if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
+                            {
+                              left_lane_open = false;
+                              std::cout << "We're at s="<<car_s << "car to left at s="<<check_car_s2<<", not clear" <<  std::endl;
+                            }
+                          }
+                        }
+                        // check right lane for this car if it still looks clear
+                        if ((right_lane_open) && (d2 < (2+4*(lane+1)+2)) && (d2 >(2+4*(lane+1)-2)))
+                        {
+                          double vx2 = sensor_fusion[i2][3];
+                          double vy2 = sensor_fusion[i2][4];
+                          double check_speed2 = sqrt(vx2*vx2+vy2*vy2);
+                          double check_car_s2 = sensor_fusion[i2][5];
+			  double check_car_s_future2 = check_car_s2;
+                          // predict where this car will be in the future
+                          //check_car_s_future2 += (double)prev_size*.02*check_speed2;
+                          //check for collisions along the way
+                          for(int ci = 0; ci <= 50; ci++)
+			  {
+			    check_car_s_future2 = (check_car_s2 + check_speed2*ci); //approx, not sure how to find accel  + check_accel2*ci*ci)/2
+
+			    // check s values greater than mine and s gap 
+                            if ((check_car_s2 > car_s - 5) && ((check_car_s_future2 - car_s) < 40) && (check_car_s_future2 < check_car_s))
+                            {
+                              right_lane_open = false;
+                              std::cout << "We're at s="<<car_s << "car to right at s="<<check_car_s2<<", not clear" <<  std::endl;
+                            }
+			  if((!left_lane_open) && (!right_lane_open)){break;}
                         }
                       }
-                    //}
+                    }
                   }
 		}
+		  if(too_close){
+		    //slow down
+		    ref_vel -= .224;
 
-std::cout<<closest_front_L<<":"<<closest_front_Lv<<"  :"<<too_close_sd<<":"<<too_close_speed<<":  "<<closest_front_R<<":"<<closest_front_Rv<<std::endl;
-std::cout<<closest_rear_L<<":"<<closest_rear_Lv<<"  :     *     :  "<<closest_rear_R<<":"<<closest_rear_Rv<<std::endl<<std::endl;
+			//change lanes if possible
 
-		double costKL = 0.0;
-		//if (too_close_speed!=1000.0){costKL += 1/too_close_speed;}
-		costKL += 1/too_close_speed;
-		double costR = 0.0;
-		if (lane==2){costR += 1000;}
-		           //if (closest_rear_R!=100000.0){costR += 1/closest_rear_R;}
-		           //if (closest_front_R!=100000.0){costR += (1/closest_front_R);}
-		costR += ((1/closest_front_R)*.20);
-		costR += ((1/closest_front_Rv)*.80);
-		           //if (closest_front_Rv!=100000.0){costR += (1/closest_front_Rv)*5;}
-		if (closest_front_R < 25){costR += 1000;}
-		if (closest_rear_R < 7){costR += 1000;}
-		if (abs(closest_front_Rfs - (car_s_now+car_speed*0.2)) < 25){costR += 1000;}
-		if (abs(closest_rear_Rfs - (car_s_now+car_speed*0.2)) < 6){costR += 1000;}
-		double costL = 0.0;	
-		if (lane==0){costL += 1000;}
-		        //if (closest_rear_L!=100000.0){costL += 1/closest_rear_L;}
-		        //if (closest_front_L!=100000.0){costL += (closest_front_L);}
-		costL += ((1/closest_front_L)*.20);
-		costL += ((1/closest_front_Lv)*.80);
-		        //if (closest_front_Lv!=100000.0){costL += (1/closest_front_Lv)*5;}
-		if (closest_front_L < 25){costL += 1000;}
-		if (closest_rear_L < 7){costL += 1000;}
-		if (abs(closest_front_Lfs - (car_s_now+car_speed*0.2)) < 25){costL += 1000;}
-		if (abs(closest_rear_Lfs - (car_s_now+car_speed*0.2)) < 6){costL += 1000;}
-
-
-		if(too_close){
-	    	  //slow down
-		  //if(too_close_sd < 5){ref_vel -= .224;}  //emergency braking
-		  //if(too_close_sd < 10){ref_vel -= .112;}
-		  //if(too_close_sd <20){ref_vel -= .056;}
-		  //if(too_close_sd < 30){ref_vel -= .056;}  
-		  ref_vel -= 0.224;
-
-		  //handle braking too hard & drift
-		  if((too_close_speed - car_speed>5)){ref_vel+=0.224;}
-
-		  //change lanes if it is cheaper then following
-
-	          if((costR>0.0001 && costR!=1000) || (costL>0.0001 && costL!=1000))
-	          {
-  	            std::cout<<"costKL: "<<costKL<<" costR: "<<costR<<" costL:"<<costL<<std::endl;	
-	            //if(closest_front_R<30 || closest_front_L<30) std::cout<<"closest front right: "<<closest_front_R<<" closest front left: "<<closest_front_L<<std::endl;
-		    //if(closest_rear_R<30 || closest_rear_L<30) std::cout<<"closest rear right: "<<closest_rear_R<<" closest rear left: "<<closest_rear_L<<std::endl;
-	            //std::cout<<"closest rear right dist: "<<closest_rear_R<<" closest rear left dist: "<<closest_rear_L<<std::endl;
-	            //std::cout<<"closest rear right future dist: "<<abs(closest_rear_Rfs - (car_s_now+(car_speed*0.2)))<<" closest rear left future: "<<abs(closest_rear_Lfs-(car_s+(car_speed*0.2)))<<std::endl;
-		  }
-                  //if (lane>0 && left_lane_open && abs(car_d-(4*lane)-2)<1)
-                  if(costL < costKL && costL < costR)
-		  {
-	            std::cout<<"lane "<<lane<<", changing lanes left"<<" delta d:"<<abs(car_d - (4*lane) - 2)<<std::endl;
-                    lane--;
-                  }
-                  //else if (lane<2 && right_lane_open && abs(car_d-(4*lane)-2)<1)
-		  else if (costR < costKL && costR < costL)
-                  {
-	            std::cout<<"lane "<<lane<<", changing lanes right"<<" delta d:"<<abs(car_d-(4*lane)-2)<<std::endl;
-                    lane++;
-                  }
-                }
-   	        else if (ref_vel < 49.5)
-	        {
- 	          ref_vel += .224;
-	        }
+                      if (lane>0 && left_lane_open && !just_changed)
+                      {
+			just_changed=true;
+                        lane--;
+	                std::cout<<"lane "<<lane<<", changing lanes left"<<std::endl;
+                      }
+                      else if (lane<2 && right_lane_open && !just_changed)
+                      {
+			just_changed=true;
+                        lane++;
+	                std::cout<<"lane "<<lane<<", changing lanes right"<<std::endl;
+                      }
+                    } else if (ref_vel < 49.5)
+		    {
+		      ref_vel += .224;
+		    }
 		//more ideal would be to find the speed of the lane to be changed to, then slow to that speed, and then change when safe.                    
-                
-		  
+                }  
 //ending basic logic
                  
 
