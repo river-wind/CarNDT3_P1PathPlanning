@@ -1,6 +1,10 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
+### Video of final result
+
+https://www.youtube.com/watch?v=pdG9bko6TMM
+
 ### Goals
 In this project the goal is to safely navigate around a virtual highway with other traffic that is driving within +-10 MPH of the 50 MPH speed limit. The car's localization and sensor fusion data about the locations of other cars is provided by the simulator, mimicking the output of a real self-driving car's sensor array.  There is also a sparse map list of waypoints around the highway, mimicking a map of the road. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible.  Note that other cars will try to change lanes too. The self-driving car should avoid hitting other cars at all cost, drive inside of the marked road lanes at all times, make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 or jerk that is greater than 50 m/s^3.
 
